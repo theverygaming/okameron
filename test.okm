@@ -1,0 +1,79 @@
+MODULE test;
+    PROCEDURE mult_okm(a: INT; b: INT;);
+    VAR result: INT;
+    BEGIN
+        result := 0;
+        WHILE b # 0 DO
+            result := result + a;
+            b := b - 1;
+        END;
+        RETURN(result);
+    END;
+
+    PROCEDURE to_font_index(char: INT;);
+    BEGIN
+        (* if character is between 'a'(0x61) and 'z'(0x7a) *)
+        IF char >|= 0x61 THEN
+            IF char <|= 0x7a THEN
+                RETURN(char - 0x60);
+            END;
+        END;
+        (* if character is between 'A'(0x41) and 'Z'(0x5a) *)
+        IF char >|= 0x41 THEN
+            IF char <|= 0x5a THEN
+                RETURN(char - 0x40);
+            END;
+        END;
+        RETURN(0);
+    END;
+
+    PROCEDURE drawchar_okm(x: INT; y: INT; char: INT; font_ptr: POINTER TO INT; fb_ptr: POINTER TO INT; fb_pitch: INT;);
+    VAR counter: INT;
+    BEGIN
+        char := to_font_index(char);
+        IF char = 0 THEN
+            RETURN();
+        END;
+        char := char - 1;
+
+        (* multiply character by 8 to get index into 8x8 font *)
+        font_ptr := font_ptr + LSH(char, 3);
+
+        (* index framebuffer (divide x by 8) *)
+        fb_ptr := fb_ptr + mult_okm(fb_pitch, y) + RSH(x, 3);
+
+        counter := 8;
+        WHILE counter # 0 DO
+            (* write part of character to screen *)
+            (* // FIXME: mask / byte load & store *)
+            fb_ptr^ := font_ptr^ & 0xFF;
+            fb_ptr := fb_ptr + fb_pitch;
+            font_ptr := font_ptr + 1;
+            counter := counter - 1;
+        END;
+    END;
+
+    EXTERN font8x8: POINTER TO CHAR;
+    
+    VAR x_pos: INT;
+    VAR y_pos: INT;
+
+    PROCEDURE print_char(char: INT;);
+    BEGIN
+        IF char = 0x0a THEN
+            x_pos := 0;
+            y_pos := y_pos + 8;
+        ELSE
+            drawchar_okm(x_pos, y_pos, char, PTROF(font8x8), 0x3000, 80);
+            x_pos := x_pos + 8;
+        END;
+        IF x_pos >|= 640 THEN
+            x_pos := 0;
+            y_pos := y_pos + 8;
+            IF x_pos >|= 480 THEN
+                (* clear framebuffer here *)
+                y_pos := 0;
+            END;
+        END;
+    END;
+END.
