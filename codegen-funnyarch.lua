@@ -47,8 +47,16 @@ return function(ir,asm)
         end
     end
     local function loadImm(r,i)
-        -- // FIXME: values larger than 16 bit not supported
-        io.stdout:write("    mov "..r..", #"..i.."\n")
+        -- // FIXME: negative values not supported
+        if i < 0 then
+            error("NOT IMPLEMENTED")
+        end
+        if i <= 0xFFFF then
+            io.stdout:write("    mov "..r..", #"..i.."\n")
+        else
+            io.stdout:write("    mov "..r..", #"..(i & 0xFFFF).."\n")
+            io.stdout:write("    movh "..r..", #"..((i >> 16) & 0xFFFF).."\n")
+        end
     end
     local function labelTranslate(name)
         if name:sub(1,2) == ".L" then
@@ -130,11 +138,9 @@ return function(ir,asm)
             if callDepth > 1 then
                 if argCount > 0 and not (r[1] == "arg" and r[2] == 0) then
                     for i=1,argCount do
-                        error("NOT IMPLEMENTED")
                         io.stdout:write("    strpi rsp, r"..(i-1)..", #-4\n")
                     end
                 elseif r[1] == "arg" and r[2] ~= 0 then
-                    error("NOT IMPLEMENTED")
                     io.stdout:write("    strpi rsp, r0, #-4\n")
                 end
             end
@@ -150,7 +156,6 @@ return function(ir,asm)
                 io.stdout:write("    mov "..getReg(r)..", r0\n") -- // TODO: optimisation (mov r0, r0)
             end
             if callDepth > 1 then
-                error("NOT IMPLEMENTED")
                 if argCount > 0 and not (r[1] == "arg" and r[2] == 0) then
                     for i=argCount,1,-1 do
                         io.stdout:write("    ldri r"..(i-1)..", rsp, #4\n")
@@ -166,23 +171,44 @@ return function(ir,asm)
         end,
         ["Add"]=function(r1,r2)
             if r2[1] == "number" then
-                io.stdout:write("    add "..getReg(r1)..", #"..r2[2].."\n")
+                if r2[2] < 0 then
+                    error("NOT IMPLEMENTED")
+                end
+                if r2[2] <= 0xFFFF then
+                    io.stdout:write("    add "..getReg(r1)..", #"..r2[2].."\n")
+                else
+                    io.stdout:write("    add "..getReg(r1)..", #"..(r2[2] & 0xFFFF).."\n")
+                    io.stdout:write("    addh "..getReg(r1)..", #"..((r2[2] >> 16) & 0xFFFF).."\n")
+                end
             else
                 io.stdout:write("    add "..getReg(r1)..", "..getReg(r1)..", "..getReg(r2).."\n")
             end
         end,
         ["Sub"]=function(r1,r2)
             if r2[1] == "number" then
-                io.stdout:write("    sub "..getReg(r1)..", #"..r2[2].."\n")
+                if r2[2] < 0 then
+                    error("NOT IMPLEMENTED")
+                end
+                if r2[2] <= 0xFFFF then
+                    io.stdout:write("    sub "..getReg(r1)..", #"..r2[2].."\n")
+                else
+                    io.stdout:write("    sub "..getReg(r1)..", #"..(r2[2] & 0xFFFF).."\n")
+                    io.stdout:write("    subh "..getReg(r1)..", #"..((r2[2] >> 16) & 0xFFFF).."\n")
+                end
             else
                 io.stdout:write("    sub "..getReg(r1)..", "..getReg(r1)..", "..getReg(r2).."\n")
             end
         end,
         ["Mul"]=function(r1,r2,sign)
-            error("NOT IMPLEMENTED")
             if r2[1] == "number" then
-                io.stdout:write("    "..(sign and "imul" or "mul").." "..getReg(r1)..", "..r2[2].."\n")
+                if (not sign) and (((math.log(r2[2]) / math.log(2))%1)==0) and ((math.log(r2[2]) / math.log(2)) < 32) then
+                    io.stdout:write("    shl "..getReg(r1)..", "..getReg(r1)..", #"..math.floor((math.log(r2[2]) / math.log(2))).."\n")
+                else
+                    error("NOT IMPLEMENTED")
+                    io.stdout:write("    "..(sign and "imul" or "mul").." "..getReg(r1)..", "..r2[2].."\n")
+                end
             else
+                error("NOT IMPLEMENTED")
                 io.stdout:write("    "..(sign and "imul" or "mul").." "..getReg(r1)..", "..getReg(r2).."\n")
             end
         end,
@@ -210,19 +236,17 @@ return function(ir,asm)
             end
         end,
         ["Or"]=function(r1,r2)
-            error("NOT IMPLEMENTED")
             if r2[1] == "number" then
-                io.stdout:write("    or "..getReg(r1)..", "..r2[2].."\n")
+                io.stdout:write("    or "..getReg(r1)..", #"..r2[2].."\n")
             else
-                io.stdout:write("    or "..getReg(r1)..", "..getReg(r2).."\n")
+                io.stdout:write("    or "..getReg(r1)..", "..getReg(r1)..", "..getReg(r2).."\n")
             end
         end,
         ["Xor"]=function(r1,r2)
-            error("NOT IMPLEMENTED")
             if r2[1] == "number" then
-                io.stdout:write("    xor "..getReg(r1)..", "..r2[2].."\n")
+                io.stdout:write("    xor "..getReg(r1)..", #"..r2[2].."\n")
             else
-                io.stdout:write("    xor "..getReg(r1)..", "..getReg(r2).."\n")
+                io.stdout:write("    xor "..getReg(r1)..", "..getReg(r1)..", "..getReg(r2).."\n")
             end
         end,
         ["Lsh"]=function(r1,r2)
@@ -274,24 +298,22 @@ return function(ir,asm)
             io.stdout:write("    ifz mov "..getReg(r1)..", #0\n")
         end,
         ["Lt"]=function(r1,r2,sign)
-            error("NOT IMPLEMENTED")
             if r2[1] == "number" then
-                io.stdout:write("    cmp "..getReg(r1)..", "..r2[2].."\n")
+                io.stdout:write("    cmp "..getReg(r1)..", #"..r2[2].."\n")
             else
                 io.stdout:write("    cmp "..getReg(r1)..", "..getReg(r2).."\n")
             end
-            io.stdout:write("    iflt mov "..getReg(r1)..", 1\n")
-            io.stdout:write("    ifgteq mov "..getReg(r1)..", 0\n")
+            io.stdout:write("    iflt mov "..getReg(r1)..", #1\n")
+            io.stdout:write("    ifgteq mov "..getReg(r1)..", #0\n")
         end,
         ["Gt"]=function(r1,r2,sign)
-            error("NOT IMPLEMENTED")
             if r2[1] == "number" then
-                io.stdout:write("    cmp "..getReg(r1)..", "..r2[2].."\n")
+                io.stdout:write("    cmp "..getReg(r1)..", #"..r2[2].."\n")
             else
                 io.stdout:write("    cmp "..getReg(r1)..", "..getReg(r2).."\n")
             end
-            io.stdout:write("    ifgt mov "..getReg(r1)..", 1\n")
-            io.stdout:write("    iflteq mov "..getReg(r1)..", 0\n")
+            io.stdout:write("    ifgt mov "..getReg(r1)..", #1\n")
+            io.stdout:write("    iflteq mov "..getReg(r1)..", #0\n")
         end,
         ["Le"]=function(r1,r2,sign)
             if r2[1] == "number" then
@@ -426,29 +448,33 @@ return function(ir,asm)
             end
         end,
         ["LoadByte"]=function(d,offset,s)
-            error("NOT IMPLEMENTED")
             if offset == 0 then
-                io.stdout:write("    movz.8 "..getReg(d)..", ["..getReg(s).."]\n")
+                io.stdout:write("    ldr "..getReg(d)..", "..getReg(s)..", #"..offset.."\n")
+                io.stdout:write("    and "..getReg(d)..", #0xFF\n")
             else
                 if offset > 0 then
-                    if offset > 127 then
+                    if offset > 4095 then
+                        error("NOT IMPLEMENTED")
                         io.stdout:write("    add "..getReg(s)..", "..offset.."\n")
                         io.stdout:write("    movz.8 "..getReg(d)..", ["..getReg(s).."]\n")
                         if getReg(s) ~= getReg(d) then
                             io.stdout:write("    sub "..getReg(s)..", "..offset.."\n")
                         end
                     else
-                        io.stdout:write("    movz.8 "..getReg(d)..", ["..getReg(s).."+"..offset.."]\n")
+                        io.stdout:write("    ldr "..getReg(d)..", "..getReg(s)..", #"..offset.."\n")
+                        io.stdout:write("    and "..getReg(d)..", #0xFF\n")
                     end
                 else
-                    if offset < -128 then
+                    if offset < -4096 then
+                        error("NOT IMPLEMENTED")
                         io.stdout:write("    sub "..getReg(s)..", "..(-offset).."\n")
                         io.stdout:write("    movz.8 "..getReg(d)..", ["..getReg(s).."]\n")
                         if getReg(s) ~= getReg(d) then
                             io.stdout:write("    add "..getReg(s)..", "..(-offset).."\n")
                         end
                     else
-                        io.stdout:write("    movz.8 "..getReg(d)..", ["..getReg(s)..offset.."]\n")
+                        io.stdout:write("    ldr "..getReg(d)..", "..getReg(s)..", #"..offset.."\n")
+                        io.stdout:write("    and "..getReg(d)..", #0xFF\n")
                     end
                 end
             end
@@ -565,7 +591,7 @@ return function(ir,asm)
         if not ops[insn[1]] then
             error("Unknown IR Instruction: "..insn[1])
         else
-            local inspect = require('inspect')
+            --local inspect = require('inspect')
             --print(string.format("IR: %s -- %s", insn[1], inspect({table.unpack(insn,2)})))
             ops[insn[1]](table.unpack(insn,2))
             --print("")
@@ -576,20 +602,19 @@ return function(ir,asm)
         io.stdout:write(".section rodata\n")
     end
     for _,i in ipairs(ir[2]) do
-        error("NOT IMPLEMENTED")
         if i[2] == "string" then
-            io.stdout:write(i[1]..": ")
+            io.stdout:write(i[1]..":\n")
             for j=1,#i[3] do
                 if useXrSDK then
                     io.stdout:write(".db "..tostring(string.byte(string.sub(i[3],j,j))).." ")
                 else
-                    io.stdout:write("data.8 "..tostring(string.byte(string.sub(i[3],j,j))).." ")
+                    io.stdout:write(".byte "..tostring(string.byte(string.sub(i[3],j,j))).."\n")
                 end
             end
             if useXrSDK then
                 io.stdout:write(".db 0\n")
             else
-                io.stdout:write("data.8 0\n")
+                io.stdout:write(".byte 0\n")
             end
         elseif i[2] == "set" then
             io.stdout:write(i[1]..":\n")
@@ -609,7 +634,10 @@ return function(ir,asm)
         if useXrSDK then
             io.stdout:write(i[1]..": .bytes "..i[2].." 0\n")
         else
-            io.stdout:write(i[1]..": data.fill 0, "..i[2].."\n")
+            io.stdout:write(i[1]..":\n")
+            for j = 1, i[2] do
+                io.stdout:write(".byte 0\n")
+            end
         end
     end
 end
